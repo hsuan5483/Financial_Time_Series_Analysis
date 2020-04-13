@@ -1,0 +1,2 @@
+# View Online
+[ARMA-gjrGARCH-in-mean Model](https://htmlpreview.github.io/?https://github.com/hsuan5483/Financial_Time_Series_Analysis/blob/master/03%20Midterm%20Exam%20-%20ARMA-gjrGARCH-in-mean%20Model/ARMA-gjrGARCH-in-mean%20Model.html)
