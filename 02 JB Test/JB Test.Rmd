@@ -1,0 +1,193 @@
+---
+title: "S&P 500 JB Test"
+date : "Date：`r Sys.Date()`"
+runtime: shiny
+output: 
+  html_document:
+    code_folding: show
+---
+
+<style type="text/css">
+body{ 
+  font-size: 16px; 
+  } 
+  
+h1 { 
+  font-size: 28px;
+  color: DarkBlue;
+  } 
+  
+h2 { 
+  font-size: 24px;
+  color: red;
+  } 
+  
+h3 { 
+  font-size: 20px;
+  color: blue;
+  }  
+  
+code.r{ 
+  font-size: 16px;
+  } 
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#if (!require("tseries")) install.packages('tseries')
+library(quantmod)
+library(plotly)
+library(tseries)
+```
+
+## Set <a href="http://rsoftware.h.baike.com/article-1866039.html"> JB Test</a> Function
+
+<span style="font-family:Microsoft JhengHei;">**tseries**中有`jarque.bera.test(x)`：
+只有一個参数x，可以是數字向量或时間序列，不允許有遺漏值，但是R中也没有規定x的最小值。</span>
+
+<span style="font-family:Microsoft JhengHei;">**nromtest**中有`jb.norm.test(x, nrepl=2000)`：
+除了x之外，多了一個蒙地卡羅模擬值，默認是2000。</span>
+
+<span style="font-family:Microsoft JhengHei;">**nromtest**中有`ajb.norm.test(x, nrepl=2000)`：
+是J-B檢測的修正，主要解決J-B統計量收歛速度慢的缺點。</span>
+```{r, message=FALSE, warning=FALSE}
+JB = function(x){
+  return(jarque.bera.test(x)[[3]])
+}
+```
+
+## Setting Conditions
+補充：<a href="https://shiny.rstudio.com/gallery/date-and-date-range.html">Date</a>
+```{r, message=FALSE, warning=FALSE}
+inputPanel(
+  
+  textInput('symbol' , label = h3("Symbol") , value = ''),
+  
+  dateRangeInput("dates" , label = h3("Date range"),
+                 start = Sys.Date() , end = Sys.Date()),
+  
+  selectInput("n", label = h3("Windows"),
+              choices = c(30, 50, 100, 250), selected = 250),
+  
+  selectInput("alpha", label = h3("Alpha"),
+              choices = c(0.05, 0.01, 0.005), selected = 0.05)
+)
+```
+
+## Get S&P 500 data
+<span style="font-family:Microsoft JhengHei;">S&P 500 代碼：^GSPC</span>
+```{r, message=FALSE, warning=FALSE}
+
+database = function(symbol , start , end , n){
+  
+  data = getSymbols(symbol , src = 'yahoo' , auto.assign = FALSE , 
+                    from = start , to = end)
+  
+  #去除遺失值
+  data = na.omit(data)
+
+  #重新命名欄位名稱
+  names(data) = c('Open' , 'High' , 'Low' , 'Close' , 'Volume' , 'Adjusted')
+
+  #取出收盤價
+  data = data$Adjusted
+
+  #計算log return=log P(t)/P(t-1)
+  data$Stock_log = data$Adjusted/lag(data$Adjusted)
+
+  #remove na
+  data = na.omit(data)
+
+  #做JB test並存到dataframe
+  data$JB_Test = rollapply(data$Stock_log , width = n , FUN = JB)
+
+  #remove na
+  data = na.omit(data)
+
+  #加入alpha
+  data$alpha = input$alpha
+  
+  return(data)
+}
+
+renderTable({
+  symbol = input$symbol
+  start = input$dates[1]
+  end = input$dates[2]
+  n = input$n
+  data = head(as.data.frame(database(symbol , start , end , n)),10)
+}, 
+  rownames = TRUE , digits = 2 , align = 'c')
+```
+
+
+##Plot
+
+```{r ,  message=FALSE, warning=FALSE}
+plot = function(data , symbol , alpha, n){
+  
+  fig = plot_ly(data = as.data.frame(data) , x = index(data)) %>%
+    
+    add_lines(y = ~Adjusted , type = "scatter" , mode = "lines" ,
+              line = list(color = 'cornflowerblue') ,
+              yaxis = "y2", name = sprintf('%s Adjusted' , symbol )) %>%
+  
+    add_lines(y = ~JB_Test , type = "scatter" , mode = "lines" ,
+              line = list(color = 'gray') , name = "JB Test") %>%
+  
+    add_lines(y = ~alpha , type = "scatter" , mode = "lines" ,
+              line = list(color = 'red') , name = sprintf("Alpha(%s)",alpha)) %>%
+   
+    layout(title = sprintf('%s Log Return JB Test',symbol),
+          xaxis = list(
+            rangeselector = list(
+              buttons = list(
+                list(
+                  count = 3,
+                  label = "3m",
+                  step = "month",
+                  stepmode = "backward"),
+                list(
+                  count = 6,
+                  label = "6m",
+                  step = "month",
+                  stepmode = "backward"),
+                list(
+                  count = 1,
+                  label = "1y",
+                  step = "year",
+                  stepmode = "backward"),
+                list(
+                  count = 3,
+                  label = "3y",
+                  step = "year",
+                  stepmode = "backward"),
+                list(
+                  count = 5,
+                  label = "5y",
+                  step = "year",
+                  stepmode = "backward"),
+                list(step = "all"))),
+            
+            rangeslider = list(type = "date")),
+          
+          yaxis = list(side = 'left' ,
+                       title = 'JB Test p-value') ,
+          
+          yaxis2 = list(title = 'Market Index' ,
+                        overlaying = "y", side = "right"))
+  offline(fig)
+}
+
+renderPlotly({
+  symbol = input$symbol
+  start = input$dates[1]
+  end = input$dates[2]
+  alpha = input$alpha
+  n = input$n
+  data = database(symbol , start , end , n)
+  plot(data , symbol , alpha , n)
+})
+
+```
+
